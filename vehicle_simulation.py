@@ -14,17 +14,17 @@ class VehicleSimulation:
         self.noise_params = noise_params  # noise parameters
         self.model = model  # model
     
-    def get_noisy_control(self, delta_cmd: float, a: float) -> Tuple[float, float]:
+    def get_noisy_control(self, a: float, delta_cmd: float) -> Tuple[float, float]:
         """
         Get noisy control inputs.
 
         Args:
-            delta_cmd: steering command
             a: acceleration
+            delta_cmd: steering command
         """
         delta_cmd_noisy = delta_cmd + np.random.normal(0, self.noise_params.delta_cmd_sigma)
         a_noisy = a + np.random.normal(0, self.noise_params.a_sigma)
-        return delta_cmd_noisy, a_noisy
+        return a_noisy, delta_cmd_noisy
     
     def get_noisy_state(self, state: np.ndarray) -> np.ndarray:
         """
@@ -45,16 +45,16 @@ class VehicleSimulation:
     def step(
         self,
         state: np.ndarray,
-        delta_cmd: float,
         a: float,
+        delta_cmd: float,
     ) -> np.ndarray:
         if self.sim_params.integrator == "euler":
-            return self.model.continuous_dynamics(state, delta_cmd, a) * self.sim_params.dt + state
+            return self.model.continuous_dynamics(state, a, delta_cmd) * self.sim_params.dt + state
         elif self.sim_params.integrator == "rk4":
-            k1 = self.model.continuous_dynamics(state, delta_cmd, a)
-            k2 = self.model.continuous_dynamics(state + 0.5 * self.sim_params.dt * k1, delta_cmd, a)
-            k3 = self.model.continuous_dynamics(state + 0.5 * self.sim_params.dt * k2, delta_cmd, a)
-            k4 = self.model.continuous_dynamics(state + self.sim_params.dt * k3, delta_cmd, a)
+            k1 = self.model.continuous_dynamics(state, a, delta_cmd)
+            k2 = self.model.continuous_dynamics(state + 0.5 * self.sim_params.dt * k1, a, delta_cmd)
+            k3 = self.model.continuous_dynamics(state + 0.5 * self.sim_params.dt * k2, a, delta_cmd)
+            k4 = self.model.continuous_dynamics(state + self.sim_params.dt * k3, a, delta_cmd)
             return state + (self.sim_params.dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
         else:
             raise ValueError(f"Unknown integrator: {self.sim_params.integrator}")
@@ -71,21 +71,21 @@ class VehicleSimulation:
         state[4] = np.clip(state[4], self.model.params.delta_min, self.model.params.delta_max)
         return state
     
-    def clip_controls(self, delta_cmd: float, a: float) -> Tuple[float, float]:
+    def clip_controls(self, a: float, delta_cmd: float) -> Tuple[float, float]:
         """
         Clip controls to limits.
 
         Args:
-            delta_cmd: steering command
             a: acceleration
+            delta_cmd: steering command
         """
         delta_cmd = np.clip(delta_cmd, self.model.params.delta_min, self.model.params.delta_max)
         a = np.clip(a, self.model.params.a_min, self.model.params.a_max)
-        return delta_cmd, a
+        return a, delta_cmd
     
     def predict(
         self,
-        state: np.ndarray,
+        init_state: np.ndarray,
         delta_cmd_seq: np.ndarray,
         a_seq: np.ndarray,
         noise_mode: NoiseMode
@@ -107,15 +107,15 @@ class VehicleSimulation:
             raise ValueError("delta_cmd_seq and a_seq must have at least one element")
         n = len(delta_cmd_seq)
         states = np.zeros((n + 1, self.model.STATE_SIZE))
-        states[0] = state
+        states[0] = init_state
         for i in range(n):
             a = a_seq[i]
             delta_cmd = delta_cmd_seq[i]
             if noise_mode != NoiseMode.OFF:
-                delta_cmd, a = self.get_noisy_control(delta_cmd, a)
-            delta_cmd, a = self.clip_controls(delta_cmd, a)
+                a, delta_cmd = self.get_noisy_control(a, delta_cmd)
+            a, delta_cmd = self.clip_controls(a, delta_cmd)
 
-            states[i+1] = self.step(states[i], delta_cmd, a) 
+            states[i+1] = self.step(states[i], a, delta_cmd) 
             if noise_mode != NoiseMode.OFF:
                 states[i+1] = self.get_noisy_state(states[i+1]) 
             states[i+1] = self.clip_state(states[i+1])
