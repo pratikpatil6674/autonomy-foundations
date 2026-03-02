@@ -1,0 +1,14 @@
+[project]
+name = "autonomy-foundations"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "do-mpc[full]>=5.1.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

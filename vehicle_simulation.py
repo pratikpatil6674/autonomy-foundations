@@ -47,17 +47,22 @@ class VehicleSimulation:
         state: np.ndarray,
         a: float,
         delta_cmd: float,
+        clip_state: bool = True
     ) -> np.ndarray:
         if self.sim_params.integrator == "euler":
-            return self.model.continuous_dynamics(state, a, delta_cmd) * self.sim_params.dt + state
+            state_new = self.model.continuous_dynamics(state, a, delta_cmd) * self.sim_params.dt + state
         elif self.sim_params.integrator == "rk4":
             k1 = self.model.continuous_dynamics(state, a, delta_cmd)
             k2 = self.model.continuous_dynamics(state + 0.5 * self.sim_params.dt * k1, a, delta_cmd)
             k3 = self.model.continuous_dynamics(state + 0.5 * self.sim_params.dt * k2, a, delta_cmd)
             k4 = self.model.continuous_dynamics(state + self.sim_params.dt * k3, a, delta_cmd)
-            return state + (self.sim_params.dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
+            state_new = state + (self.sim_params.dt / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
         else:
             raise ValueError(f"Unknown integrator: {self.sim_params.integrator}")
+        
+        if clip_state:
+            state_new = self.clip_state(state_new)
+        return state_new
     
     def clip_state(self, state: np.ndarray) -> np.ndarray:
         """
@@ -115,7 +120,7 @@ class VehicleSimulation:
                 a, delta_cmd = self.get_noisy_control(a, delta_cmd)
             a, delta_cmd = self.clip_controls(a, delta_cmd)
 
-            states[i+1] = self.step(states[i], a, delta_cmd) 
+            states[i+1] = self.step(states[i], a, delta_cmd, clip_state=False) 
             if noise_mode != NoiseMode.OFF:
                 states[i+1] = self.get_noisy_state(states[i+1]) 
             states[i+1] = self.clip_state(states[i+1])

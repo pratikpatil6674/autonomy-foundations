@@ -77,3 +77,33 @@ def test_plot_raises_on_label_length_mismatch():
             experiment_labels=["only_one_label"],
             show=False,
         )
+
+
+def test_plot_creates_animation_when_requested():
+    plotter = SimulationPlotter(dt=0.1, state_size=5)
+    states_list = [make_states(0.0), make_states(1.0)]
+
+    fig, _ = plotter.plot(
+        states=states_list,
+        state_indices=[0],
+        experiment_labels=["true", "kf"],
+        animate=True,
+        show=False,
+    )
+
+    assert plotter._last_animation is not None
+    plt.close(fig)
+
+
+def test_plot_raises_on_invalid_animation_args():
+    plotter = SimulationPlotter(dt=0.1, state_size=5)
+    states = make_states()
+
+    with pytest.raises(ValueError, match="animate_stride must be >= 1"):
+        plotter.plot(states=states, animate=True, animate_stride=0, show=False)
+
+    with pytest.raises(ValueError, match="animate_interval_ms must be > 0"):
+        plotter.plot(states=states, animate=True, animate_interval_ms=0, show=False)
+
+    with pytest.raises(ValueError, match="animate_heading_length must be > 0"):
+        plotter.plot(states=states, animate=True, animate_heading_length=0.0, show=False)

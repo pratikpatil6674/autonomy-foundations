@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 from typing import Optional, Sequence, Union, List, Tuple
 
 
@@ -21,6 +22,7 @@ class SimulationPlotter:
         """
         self.dt = dt
         self.state_size = state_size
+        self._last_animation: Optional[FuncAnimation] = None
 
     def _parse_state_indices(
         self,
@@ -153,6 +155,10 @@ class SimulationPlotter:
         delta_cmd_seq: Optional[Union[np.ndarray, Sequence[np.ndarray]]] = None,
         a_seq: Optional[Union[np.ndarray, Sequence[np.ndarray]]] = None,
         experiment_labels: Optional[Sequence[str]] = None,
+        animate: bool = False,
+        animate_interval_ms: int = 30,
+        animate_stride: int = 1,
+        animate_heading_length: float = 0.8,
         show: bool = True,
     ) -> Tuple[plt.Figure, np.ndarray]:
         """
@@ -174,6 +180,14 @@ class SimulationPlotter:
             experiment_labels:
                 Optional labels for experiments. Length must match number of
                 experiments in `states`.
+            animate:
+                If `True`, animate the X-Y subplot to show motion over time.
+            animate_interval_ms:
+                Delay between animation frames in milliseconds.
+            animate_stride:
+                Use every `animate_stride` sample to speed up animation.
+            animate_heading_length:
+                Arrow length used to indicate heading direction from `psi`.
             show: If `True`, call `matplotlib.pyplot.show()`.
 
         Returns:
@@ -210,6 +224,83 @@ class SimulationPlotter:
         ax_xy.grid(True)
         ax_xy.axis("equal")
         ax_xy.legend()
+
+        if animate:
+            if animate_stride < 1:
+                raise ValueError(f"animate_stride must be >= 1, got {animate_stride}")
+            if animate_interval_ms <= 0:
+                raise ValueError(f"animate_interval_ms must be > 0, got {animate_interval_ms}")
+            if animate_heading_length <= 0.0:
+                raise ValueError(
+                    f"animate_heading_length must be > 0, got {animate_heading_length}"
+                )
+
+            trail_lines = []
+            car_arrows = []
+            frame_count = max(1, max(state_arr.shape[0] for state_arr in states_list) // animate_stride)
+
+            for exp_idx, state_arr in enumerate(states_list):
+                if state_arr.shape[1] <= 2:
+                    raise ValueError(
+                        "animate=True requires state arrays with psi at index 2."
+                    )
+                line = ax_xy.plot([], [], linestyle="-", linewidth=2.0, label=f"{labels[exp_idx]} (trail)")[0]
+                x0, y0, psi0 = state_arr[0, 0], state_arr[0, 1], state_arr[0, 2]
+                arrow = ax_xy.quiver(
+                    [x0],
+                    [y0],
+                    [animate_heading_length * np.cos(psi0)],
+                    [animate_heading_length * np.sin(psi0)],
+                    angles="xy",
+                    scale_units="xy",
+                    scale=1.0,
+                    color=line.get_color(),
+                )
+                trail_lines.append((line, state_arr))
+                car_arrows.append((arrow, state_arr))
+
+            # Refresh legend to include animated artists.
+            ax_xy.legend()
+
+            def _init_anim():
+                for line, _ in trail_lines:
+                    line.set_data([], [])
+                for arrow, state_arr in car_arrows:
+                    x0, y0, psi0 = state_arr[0, 0], state_arr[0, 1], state_arr[0, 2]
+                    arrow.set_offsets(np.array([[x0, y0]]))
+                    arrow.set_UVC(
+                        animate_heading_length * np.cos(psi0),
+                        animate_heading_length * np.sin(psi0),
+                    )
+                return [a for a, _ in trail_lines] + [a for a, _ in car_arrows]
+
+            def _update_anim(frame_idx: int):
+                sample_idx = frame_idx * animate_stride
+                artists = []
+                for line, state_arr in trail_lines:
+                    idx = min(sample_idx, state_arr.shape[0] - 1)
+                    line.set_data(state_arr[: idx + 1, 0], state_arr[: idx + 1, 1])
+                    artists.append(line)
+                for arrow, state_arr in car_arrows:
+                    idx = min(sample_idx, state_arr.shape[0] - 1)
+                    x, y, psi = state_arr[idx, 0], state_arr[idx, 1], state_arr[idx, 2]
+                    arrow.set_offsets(np.array([[x, y]]))
+                    arrow.set_UVC(
+                        animate_heading_length * np.cos(psi),
+                        animate_heading_length * np.sin(psi),
+                    )
+                    artists.append(arrow)
+                return artists
+
+            self._last_animation = FuncAnimation(
+                fig=fig,
+                func=_update_anim,
+                init_func=_init_anim,
+                frames=frame_count,
+                interval=animate_interval_ms,
+                blit=True,
+                repeat=False,
+            )
 
         next_axis = 1
 
